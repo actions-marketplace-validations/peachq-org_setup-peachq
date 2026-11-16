@@ -1,0 +1,90 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  action:
+    name: action ${{ matrix.version }} on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+        version: [0.92.20261115, v0.92, latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: pq
+        uses: ./
+        with:
+          version: ${{ matrix.version }}
+      - name: the exports agree and q reports the requested version
+        env:
+          REQUESTED: ${{ matrix.version }}
+          Q_PATH: ${{ steps.pq.outputs.q-path }}
+          Q_VERSION: ${{ steps.pq.outputs.version }}
+        run: test/check-install.sh
+      - run: test/smoke.sh
+
+  add-to-path:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./
+        with:
+          version: 0.92.20261115
+          add-to-path: 'true'
+      - run: '[ "$(command -v q)" = "$PEACHQ_Q" ]'
+
+  peachq-org:
+    name: action from peachq.org
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: pq
+        uses: ./
+        with:
+          version: 0.92.20261115
+          dist-url: https://peachq.org/file
+      - name: the build came from peachq.org
+        env:
+          REQUESTED: 0.92.20261115
+          Q_PATH: ${{ steps.pq.outputs.q-path }}
+          Q_VERSION: ${{ steps.pq.outputs.version }}
+        run: |
+          test/check-install.sh
+          grep -x 'source=https://peachq.org/file' "$(dirname "$PEACHQ_Q")/.peachq-install"
+
+  install-sh:
+    name: install.sh without the action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: test/install-sh.sh
+
+  # The one macOS job: nightly, on demand and on release tags, not on every pull request.
+  macos:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: pq
+        uses: ./
+        with:
+          version: 0.92.20261115
+      - env:
+          REQUESTED: 0.92.20261115
+          Q_PATH: ${{ steps.pq.outputs.q-path }}
+          Q_VERSION: ${{ steps.pq.outputs.version }}
+        run: test/check-install.sh
+      - run: test/smoke.sh
+      - run: test/install-sh.sh
